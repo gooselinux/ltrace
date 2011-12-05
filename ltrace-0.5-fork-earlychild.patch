@@ -1,0 +1,87 @@
+diff -urp ltrace-0.5/ltrace.h ltrace-0.5-pm/ltrace.h
+--- ltrace-0.5/ltrace.h	2009-03-03 02:07:44.000000000 +0100
++++ ltrace-0.5-pm/ltrace.h	2009-03-03 02:07:19.000000000 +0100
+@@ -107,6 +107,9 @@ struct process {
+ 	int mask_32bit;		/* 1 if 64-bit ltrace is tracing 32-bit process.  */
+ 	unsigned int personality;
+ 	int tracesysgood;	/* signal indicating a PTRACE_SYSCALL trap */
++	int early;	/* for consistency checks, this is true for
++			 * children whose TRAP was delivered before
++			 * the fork message of the parent.  */
+ 
+ 	int callstack_depth;
+ 	struct callstack_element callstack[MAX_CALLDEPTH];
+@@ -173,7 +176,7 @@ extern void reinitialize_breakpoints(str
+ 
+ extern struct process *open_program(char *filename, pid_t pid);
+ extern void open_pid(pid_t pid, int verbose);
+-extern void open_forked_pid(pid_t pid);
++extern void open_forked_pid(pid_t pid, int early);
+ extern void show_summary(void);
+ 
+ /* Arch-dependent stuff: */
+diff -urp ltrace-0.5/proc.c ltrace-0.5-pm/proc.c
+--- ltrace-0.5/proc.c	2009-03-03 02:07:44.000000000 +0100
++++ ltrace-0.5-pm/proc.c	2009-03-03 02:07:19.000000000 +0100
+@@ -59,9 +59,10 @@ void open_pid(pid_t pid, int verbose)
+ 	proc->pid = pid;
+ }
+ 
+-void open_forked_pid(pid_t pid)
++void open_forked_pid(pid_t pid, int early)
+ {
+ 	char *filename = pid2name(pid);
+ 	struct process *proc = open_program(filename, pid);
++	proc->early = early;
+ 	proc->breakpoints_enabled = -1;
+ }
+diff -urp ltrace-0.5/wait_for_something.c ltrace-0.5-pm/wait_for_something.c
+--- ltrace-0.5/wait_for_something.c	2009-03-03 02:07:44.000000000 +0100
++++ ltrace-0.5-pm/wait_for_something.c	2009-03-03 02:07:19.000000000 +0100
+@@ -45,10 +45,24 @@ struct event *wait_for_something(void)
+ 		perror("wait");
+ 		exit(1);
+ 	}
++
+ 	event.proc = pid2proc(pid);
+ 	if (!event.proc) {
+-		fprintf(stderr, "signal from wrong pid %u ?!?\n", pid);
+-		exit(1);
++		if(!opt_f) {
++			fprintf(stderr, "signal from wrong pid %u ?!?\n", pid);
++			exit(1);
++		} else {
++			/* Parent forked, but we got child's STOP
++			 * signal first.  */
++			debug (1, "signal from forked child delivered ahead of time?");
++
++			event.thing = LT_EV_NONE;
++			event.e_un.signum = WSTOPSIG(status);
++			open_forked_pid(pid, 1);
++			event.proc = pid2proc(pid);
++			continue_after_signal(event.proc->pid, event.e_un.signum);
++			return &event;
++		}
+ 	}
+ 	get_arch_dep(event.proc);
+ 	event.proc->instruction_pointer = NULL;
+@@ -104,7 +118,18 @@ struct event *wait_for_something(void)
+ 		child_pid = (pid_t) get_child_pid(event.proc->pid);
+                 if (child_pid){
+ 			debug (3, "fork: get_child_pid gave us %d", child_pid);
+-			open_forked_pid(child_pid);
++
++			struct process *it = list_of_processes;
++			for (; it != NULL; it = it->next)
++				if (it->pid == child_pid) {
++					if (!it->early)
++						fprintf (stderr,
++							 "Child %d re-delivered.\n",
++							 child_pid);
++					break;
++				}
++			if (!it)
++				open_forked_pid(child_pid, 0);
+                 }
+                 enable_all_breakpoints(event.proc);
+ 		continue_after_signal(event.proc->pid, event.e_un.signum);

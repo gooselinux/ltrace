@@ -1,0 +1,22 @@
+diff -Bburp ltrace-0.5/breakpoints.c ltrace-0.5-pm/breakpoints.c
+--- ltrace-0.5/breakpoints.c	2006-08-30 08:03:25.000000000 -0400
++++ ltrace-0.5-pm/breakpoints.c	2006-08-30 08:02:39.000000000 -0400
+@@ -20,6 +20,10 @@
+ 
+ struct breakpoint *address2bpstruct(struct process *proc, void *addr)
+ {
++	if (!proc->breakpoints) {
++		proc->breakpoints =
++		  dict_init(dict_key2hash_int, dict_key_cmp_int);
++	}
+ 	return dict_find_entry(proc->breakpoints, addr);
+ }
+ 
+@@ -33,7 +39,6 @@ insert_breakpoint(struct process *proc, 
+ 	if (!proc->breakpoints) {
+ 		proc->breakpoints =
+ 		    dict_init(dict_key2hash_int, dict_key_cmp_int);
+-		/* atexit(brk_dict_clear); *//* why bother to do this on exit? */
+ 	}
+ 
+ 	if (!addr)

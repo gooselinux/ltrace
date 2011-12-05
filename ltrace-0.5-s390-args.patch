@@ -1,0 +1,17 @@
+--- ltrace/sysdeps/linux-gnu/s390/trace.c.orig	2007-12-17 04:57:08.000000000 +0530
++++ ltrace/sysdeps/linux-gnu/s390/trace.c	2007-12-17 05:04:30.000000000 +0530
+@@ -92,8 +92,12 @@ long gimme_arg(enum tof type, struct pro
+ 		ret = ptrace(PTRACE_PEEKUSER, proc->pid, PT_GPR6, 0);
+ 		break;
+ 	default:
+-		fprintf(stderr, "gimme_arg called with wrong arguments\n");
+-		exit(2);
++		/*Rest of the params saved in stack */
++		if(arg_num >= 5){
++		ret = ptrace(PTRACE_PEEKUSER, proc->pid,
++					proc->stack_pointer + 96 +
++					4 * (arg_num - 5), 0);
++		}
+ 	}
+ #ifdef __s390x__
+ 	if (proc->mask_32bit)

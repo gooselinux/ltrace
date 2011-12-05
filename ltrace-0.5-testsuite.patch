@@ -1,0 +1,56 @@
+diff -urpd ltrace-0.5-orig/testsuite/ltrace.main/system_calls.exp ltrace-0.5/testsuite/ltrace.main/system_calls.exp
+--- ltrace-0.5-orig/testsuite/ltrace.main/system_calls.exp	2006-07-14 16:51:31.000000000 -0400
++++ ltrace-0.5/testsuite/ltrace.main/system_calls.exp	2006-07-14 17:12:58.000000000 -0400
+@@ -40,9 +40,9 @@ set pattern "SYS_brk"
+ ltrace_verify_output ${srcdir}/${subdir}/${testfile}.ltrace $pattern 1
+ set pattern "SYS_open"
+ ltrace_verify_output ${srcdir}/${subdir}/${testfile}.ltrace $pattern 1
+-set pattern "SYS_fstat"
++set pattern "SYS_(new)?fstat"
+ ltrace_verify_output ${srcdir}/${subdir}/${testfile}.ltrace $pattern 1
+-set pattern "SYS_mmap"
++set pattern "SYS_(old_)?mmap"
+ ltrace_verify_output ${srcdir}/${subdir}/${testfile}.ltrace $pattern 1
+ set pattern "SYS_close"
+ ltrace_verify_output ${srcdir}/${subdir}/${testfile}.ltrace $pattern 1
+@@ -55,7 +55,7 @@ set pattern "SYS_symlink"
+ ltrace_verify_output ${srcdir}/${subdir}/${testfile}.ltrace $pattern 1
+ set pattern "SYS_unlink"
+ ltrace_verify_output ${srcdir}/${subdir}/${testfile}.ltrace $pattern 1
+-set pattern "SYS_stat"
++set pattern "SYS_(new)?stat"
+ ltrace_verify_output ${srcdir}/${subdir}/${testfile}.ltrace $pattern 1
+ set pattern "SYS_access"
+ ltrace_verify_output ${srcdir}/${subdir}/${testfile}.ltrace $pattern 1
+diff -urpd ltrace-0.5-orig/testsuite/ltrace.minor/trace-clone.exp ltrace-0.5/testsuite/ltrace.minor/trace-clone.exp
+--- ltrace-0.5-orig/testsuite/ltrace.minor/trace-clone.exp	2006-07-14 16:51:31.000000000 -0400
++++ ltrace-0.5/testsuite/ltrace.minor/trace-clone.exp	2006-07-14 16:55:52.000000000 -0400
+@@ -30,7 +30,7 @@ if [regexp {ELF from incompatible archit
+ 	fail "32-bit ltrace can not perform on 64-bit PUTs and rebuild ltrace in 64 bit mode!"
+ 	return
+ } elseif [ regexp {Operation not permitted} $exec_output ] {
+-        fail "Operation not permitted, see testrun.log for details!"
++        xfail "Operation not permitted, see testrun.log for details!"
+         return
+ } elseif [ regexp {killed by SIGKILL} $exec_output ] {
+         fail "killed by SIGKILL!"
+--- ltrace-0.5-orig/testsuite/ltrace.minor/count-record.exp~	2006-03-13 18:12:01.000000000 -0500
++++ ltrace-0.5/testsuite/ltrace.minor/count-record.exp	2010-03-22 10:29:08.452831566 -0400
+@@ -27,8 +27,6 @@ if [regexp {ELF from incompatible archit
+ }
+ 
+ 
+-ltrace_saveoutput $exec_output $srcdir/$subdir/$binfile.ltrace
+-
+ #
+ #  This is a sample output and Verify the forth and fifth column.
+ #
+--- ltrace-0.5-orig/testsuite/ltrace.minor/demangle-lib.cpp~	2006-03-13 18:12:01.000000000 -0500
++++ ltrace-0.5/testsuite/ltrace.minor/demangle-lib.cpp	2010-03-22 10:29:11.000459000 -0400
+@@ -1,5 +1,6 @@
+ #include<stddef.h>
+ #include<iostream>
++#include<stdlib.h>
+ 
+ #include"demangle.h"
+ 

@@ -1,0 +1,12 @@
+diff -ru ltrace-0.5/ltrace.1 ltrace-0.5-PATCHED/ltrace.1
+--- ltrace-0.5/ltrace.1	2006-06-16 03:15:18.000000000 +0200
++++ ltrace-0.5-PATCHED/ltrace.1	2007-01-25 14:28:44.000000000 +0100
+@@ -153,8 +153,6 @@
+ .LP
+ It only works on Linux and in a small subset of architectures.
+ .LP
+-Only ELF32 binaries are supported.
+-.LP
+ Calls to dlopen()ed libraries will not be traced.
+ .PP
+ If you like to report a bug, send a notice to the author, or use the

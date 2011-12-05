@@ -1,0 +1,74 @@
+diff -urp ltrace-0.5-unpatched/ltrace.h ltrace-0.5/ltrace.h
+--- ltrace-0.5-unpatched/ltrace.h	2008-09-02 09:45:39.000000000 -0400
++++ ltrace-0.5/ltrace.h	2008-09-02 11:00:35.000000000 -0400
+@@ -173,6 +177,7 @@ extern void reinitialize_breakpoints(str
+ 
+ extern struct process *open_program(char *filename, pid_t pid);
+ extern void open_pid(pid_t pid, int verbose);
++extern void open_forked_pid(pid_t pid);
+ extern void show_summary(void);
+ 
+ /* Arch-dependent stuff: */
+diff -urp ltrace-0.5-unpatched/proc.c ltrace-0.5/proc.c
+--- ltrace-0.5-unpatched/proc.c	2008-09-02 09:45:39.000000000 -0400
++++ ltrace-0.5/proc.c	2008-09-03 09:07:25.000000000 -0400
+@@ -58,3 +58,10 @@ void open_pid(pid_t pid, int verbose)
+ 	proc = open_program(filename, 0);
+ 	proc->pid = pid;
+ }
++
++void open_forked_pid(pid_t pid)
++{
++	char *filename = pid2name(pid);
++	struct process *proc = open_program(filename, pid);
++	proc->breakpoints_enabled = -1;
++}
+diff -urp ltrace-0.5-unpatched/testsuite/lib/ltrace.exp ltrace-0.5/testsuite/lib/ltrace.exp
+--- ltrace-0.5-unpatched/testsuite/lib/ltrace.exp	2008-09-02 09:45:39.000000000 -0400
++++ ltrace-0.5/testsuite/lib/ltrace.exp	2008-09-02 11:00:35.000000000 -0400
+@@ -260,7 +260,7 @@ proc ltrace_saveoutput { args } {
+ proc ltrace_verify_output { file_to_search pattern {instance_no 0}} {
+ 
+ 	# compute the number of PATTERN in FILE_TO_SEARCH by grep and wc.
+-	catch "exec sh -c {grep $pattern $file_to_search | wc -l ;exit}" output
++	catch "exec sh -c {egrep $pattern $file_to_search | wc -l ;exit}" output
+ 	verbose "output = $output"
+ 	
+ 	if { $instance_no == 0 } then {
+diff -urp ltrace-0.5-unpatched/testsuite/ltrace.minor/trace-fork.exp ltrace-0.5/testsuite/ltrace.minor/trace-fork.exp
+--- ltrace-0.5-unpatched/testsuite/ltrace.minor/trace-fork.exp	2008-09-02 09:45:39.000000000 -0400
++++ ltrace-0.5/testsuite/ltrace.minor/trace-fork.exp	2008-09-02 11:00:35.000000000 -0400
+@@ -35,6 +35,19 @@ if [regexp {ELF from incompatible archit
+ 
+ ltrace_saveoutput "${exec_output}" ${srcdir}/${subdir}/${testfile}.ltrace
+ 
+-set pattern "fork"
++if [ regexp {Cannot attach} $exec_output ] {
++	fail "Couldn't attach to forked process!"
++	return
++}
++
++set pattern "^fork"
+ ltrace_verify_output ${srcdir}/${subdir}/${testfile}.ltrace $pattern 1
+ 
++set pattern {'^\[pid [0-9]*\][ \t]*(printf|puts)'}
++ltrace_verify_output ${srcdir}/${subdir}/${testfile}.ltrace $pattern 2
++
++set pattern {'^\[pid [0-9]*\][ \t]*wait'}
++ltrace_verify_output ${srcdir}/${subdir}/${testfile}.ltrace $pattern 1
++
++set pattern {'^\[pid [0-9]*\][ \t]*sleep'}
++ltrace_verify_output ${srcdir}/${subdir}/${testfile}.ltrace $pattern 1
+diff -urp ltrace-0.5-unpatched/wait_for_something.c ltrace-0.5/wait_for_something.c
+--- ltrace-0.5-unpatched/wait_for_something.c	2008-09-02 09:45:39.000000000 -0400
++++ ltrace-0.5/wait_for_something.c	2008-09-02 11:00:35.000000000 -0400
+@@ -107,7 +107,8 @@ struct event *wait_for_something(void)
+ 		event.e_un.signum = WSTOPSIG(status);
+ 		child_pid = (pid_t) get_child_pid(event.proc->pid);
+                 if (child_pid){
+-			open_pid(child_pid,0);
++			debug (3, "fork: get_child_pid gave us %d", child_pid);
++			open_forked_pid(child_pid);
+                 }
+                 enable_all_breakpoints(event.proc);
+ 		continue_after_signal(event.proc->pid, event.e_un.signum);

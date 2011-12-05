@@ -1,0 +1,25 @@
+diff -Burp ltrace-0.5-orig/elf.c ltrace-0.5/elf.c
+--- ltrace-0.5-orig/elf.c	2006-08-30 02:38:17.000000000 +0200
++++ ltrace-0.5/elf.c	2006-08-30 03:42:30.000000000 +0200
+@@ -478,10 +478,17 @@ struct library_symbol *read_elf(struct p
+ 
+ 		name = lte->dynstr + sym.st_name;
+ 		if (in_load_libraries(name, lte)) {
+-			addr = arch_plt_sym_val(lte, i, &rela);
+-			add_library_symbol(addr, name, &library_symbols,
+-					   (PLTS_ARE_EXECUTABLE(lte)
+-					   ?  LS_TOPLT_EXEC : LS_TOPLT_POINT),
++			enum toplt pltt;
++			if (lte->ehdr.e_machine == EM_PPC) {
++				addr = sym.st_value;
++				pltt = LS_TOPLT_EXEC;
++			}
++			else {
++				addr = arch_plt_sym_val(lte, i, &rela);
++				pltt = (PLTS_ARE_EXECUTABLE(lte)
++					?  LS_TOPLT_EXEC : LS_TOPLT_POINT);
++			}
++			add_library_symbol(addr, name, &library_symbols, pltt,
+ 					   ELF64_ST_BIND(sym.st_info) == STB_WEAK);
+ 			if (!lib_tail)
+ 				lib_tail = &(library_symbols->next);

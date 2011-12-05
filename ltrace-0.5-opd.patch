@@ -1,0 +1,23 @@
+diff -urp ltrace-0.5/elf.c ltrace-0.5-pm/elf.c
+--- ltrace-0.5/elf.c	2006-08-23 17:45:47.000000000 +0200
++++ ltrace-0.5-pm/elf.c	2006-08-23 17:47:58.000000000 +0200
+@@ -342,12 +342,18 @@ static GElf_Addr opd2addr(struct ltelf *
+ 	if (!lte->opd)
+ 		return (GElf_Addr) (long) addr;
+ 
++#ifdef __ia64__
++	/* XXX: On Itaniums, gelf seems to return function address
++	   instead of address of function descriptor. */
++	ret_val = (GElf_Addr)addr;
++#else
+ 	base = (long)lte->opd->d_buf;
+ 	offset = (long)addr - (long)lte->opd_addr;
+ 	if (offset > lte->opd_size)
+ 		error(EXIT_FAILURE, 0, "static plt not in .opd");
+ 
+ 	ret_val = (GElf_Addr) * (long *)(base + offset);
++#endif
+ 	return ret_val;
+ }
+ 
+Only in ltrace-0.5-pm: elf.c~

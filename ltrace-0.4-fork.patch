@@ -1,0 +1,199 @@
+diff -Naurp ltrace-0.4/ltrace.h ltrace-0.4-Getmsg/ltrace.h
+--- ltrace-0.4/ltrace.h	2006-02-20 16:48:07.000000000 -0500
++++ ltrace-0.4-Getmsg/ltrace.h	2006-07-18 02:23:36.000000000 -0400
+@@ -12,6 +12,7 @@
+ #include "sysdep.h"
+ 
+ #define MAX_LIBRARY	30
++#define TRACE_FORK	1
+ 
+ #if defined HAVE_LIBIBERTY || defined HAVE_LIBSUPC__
+ # define USE_DEMANGLE
+@@ -170,7 +171,7 @@ extern void show_summary(void);
+ 
+ /* Arch-dependent stuff: */
+ extern char *pid2name(pid_t pid);
+-extern void trace_set_options(struct process *proc, pid_t pid);
++extern void trace_set_options(struct process *proc, pid_t pid, int option);
+ extern void trace_me(void);
+ extern int trace_pid(pid_t pid);
+ extern void untrace_pid(pid_t pid);
+@@ -198,5 +199,5 @@ extern void *plt2addr(struct process *, 
+ #if 0				/* not yet */
+ extern int umoven(struct process *proc, void *addr, int len, void *laddr);
+ #endif
+-
++extern ulong get_child_pid(pid_t pid);
+ #endif
+diff -Naurp ltrace-0.4/proc.c ltrace-0.4-Getmsg/proc.c
+--- ltrace-0.4/proc.c	2006-02-20 16:48:07.000000000 -0500
++++ ltrace-0.4-Getmsg/proc.c	2006-07-17 06:00:36.000000000 -0400
+@@ -22,10 +22,11 @@ struct process *open_program(char *filen
+ 	}
+ 	proc->filename = filename;
+ 	proc->breakpoints_enabled = -1;
++	proc->pid = 0;
++	breakpoints_init(proc); 
+ 	if (pid) {
+ 		proc->pid = pid;
+ 	}
+-	breakpoints_init(proc);
+ 
+ 	proc->next = list_of_processes;
+ 	list_of_processes = proc;
+@@ -37,11 +38,13 @@ void open_pid(pid_t pid, int verbose)
+ 	struct process *proc;
+ 	char *filename;
+ 
++#if 0
+ 	if (trace_pid(pid) < 0) {
+ 		fprintf(stderr, "Cannot attach to pid %u: %s\n", pid,
+ 			strerror(errno));
+ 		return;
+ 	}
++#endif
+ 
+ 	filename = pid2name(pid);
+ 
+@@ -54,7 +57,6 @@ void open_pid(pid_t pid, int verbose)
+ 		return;
+ 	}
+ #endif
+-
+ 	proc = open_program(filename, pid);
+-	proc->breakpoints_enabled = 1;
++	proc->breakpoints_enabled = -1;
+ }
+diff -Naurp ltrace-0.4/process_event.c ltrace-0.4-Getmsg/process_event.c
+--- ltrace-0.4/process_event.c	2006-02-20 16:48:07.000000000 -0500
++++ ltrace-0.4-Getmsg/process_event.c	2006-07-18 03:05:16.000000000 -0400
+@@ -223,16 +223,6 @@ static void process_sysret(struct event 
+ 	if (opt_T || opt_c) {
+ 		calc_time_spent(event->proc);
+ 	}
+-	if (fork_p(event->proc, event->e_un.sysnum)) {
+-		if (opt_f) {
+-			pid_t child =
+-			    gimme_arg(LT_TOF_SYSCALLR, event->proc, -1);
+-			if (child > 0) {
+-				open_pid(child, 0);
+-			}
+-		}
+-		enable_all_breakpoints(event->proc);
+-	}
+ 	callstack_pop(event->proc);
+ 	if (opt_S) {
+ 		output_right(LT_TOF_SYSCALLR, event->proc,
+diff -Naurp ltrace-0.4/sysdeps/linux-gnu/trace.c ltrace-0.4-Getmsg/sysdeps/linux-gnu/trace.c
+--- ltrace-0.4/sysdeps/linux-gnu/trace.c	2006-02-20 16:48:07.000000000 -0500
++++ ltrace-0.4-Getmsg/sysdeps/linux-gnu/trace.c	2006-07-18 02:49:35.000000000 -0400
+@@ -90,7 +90,7 @@ int trace_pid(pid_t pid)
+ 	return 0;
+ }
+ 
+-void trace_set_options(struct process *proc, pid_t pid)
++void trace_set_options(struct process *proc, pid_t pid, int option)
+ {
+ #ifndef PTRACE_SETOPTIONS
+ #define PTRACE_SETOPTIONS 0x4200
+@@ -101,10 +101,21 @@ void trace_set_options(struct process *p
+ #ifndef PTRACE_O_TRACESYSGOOD
+ #define PTRACE_O_TRACESYSGOOD 0x00000001
+ #endif
++#ifndef PTRACE_O_TRACEFORK
++#define PTRACE_O_TRACEFORK 0x00000002
++#endif
++      
++	ulong setoptions = 0;
++
+ 	if (proc->tracesysgood & 0x80)
+ 		return;
+-	if (ptrace(PTRACE_SETOPTIONS, pid, 0, PTRACE_O_TRACESYSGOOD) < 0 &&
+-	    ptrace(PTRACE_OLDSETOPTIONS, pid, 0, PTRACE_O_TRACESYSGOOD) < 0) {
++ 
++	setoptions |= PTRACE_O_TRACESYSGOOD;
++	if (TRACE_FORK == option){
++		setoptions |= PTRACE_O_TRACEFORK;
++	}
++	if (ptrace(PTRACE_SETOPTIONS, pid, 0, setoptions) < 0 &&
++	    ptrace(PTRACE_OLDSETOPTIONS, pid, 0, PTRACE_O_TRACESYSGOOD) < 0){
+ 		perror("PTRACE_SETOPTIONS");
+ 		return;
+ 	}
+@@ -175,3 +186,18 @@ int umovestr(struct process *proc, void 
+ 	*(char *)(laddr + offset) = '\0';
+ 	return 0;
+ }
++
++ulong get_child_pid(pid_t pid)
++{
++#ifndef PTRACE_GETEVENTMSG
++#define PTRACE_GETEVENTMSG 0x4201
++#endif
++        ulong child_pid = 9999;
++                                                                                                                             
++       if( ptrace(PTRACE_GETEVENTMSG, pid, 0, &child_pid) < 0) {
++                perror("PTRACE_GETEVENTMSG");
++                return 0;
++        }
++        return child_pid;
++}
++
+diff -Naurp ltrace-0.4/wait_for_something.c ltrace-0.4-Getmsg/wait_for_something.c
+--- ltrace-0.4/wait_for_something.c	2006-02-20 16:48:07.000000000 -0500
++++ ltrace-0.4-Getmsg/wait_for_something.c	2006-07-18 02:32:26.000000000 -0400
+@@ -14,15 +14,17 @@
+ #include "options.h"
+ #include "debug.h"
+ 
++#define FORK_MASK 0x00010000
+ static struct event event;
+ 
+ /* This should also update `current_process' */
+ 
+ static struct process *pid2proc(int pid);
++void verify(int sig_status);
+ 
+ struct event *wait_for_something(void)
+ {
+-	pid_t pid;
++	pid_t pid, child_pid;
+ 	int status;
+ 	int tmp;
+ 
+@@ -54,7 +56,11 @@ struct event *wait_for_something(void)
+ 	if (event.proc->breakpoints_enabled == -1) {
+ 		enable_all_breakpoints(event.proc);
+ 		event.thing = LT_EV_NONE;
+-		trace_set_options(event.proc, event.proc->pid);
++  		if(opt_f){
++			trace_set_options(event.proc, event.proc->pid, TRACE_FORK);
++		}else{
++			trace_set_options(event.proc, event.proc->pid, 0);
++		}
+ 		continue_process(event.proc->pid);
+ 		return &event;
+ 	}
+@@ -92,6 +98,17 @@ struct event *wait_for_something(void)
+ 		event.e_un.signum = WSTOPSIG(status);
+ 		return &event;
+ 	}
++        if((WSTOPSIG(status) == SIGTRAP) && (status & FORK_MASK)) {
++		event.thing = LT_EV_NONE;
++		event.e_un.signum = WSTOPSIG(status);
++		child_pid = (pid_t) get_child_pid(event.proc->pid);
++                if (child_pid){
++			open_pid(child_pid,0);
++                }
++                enable_all_breakpoints(event.proc);
++		continue_after_signal(event.proc->pid, event.e_un.signum);
++		return &event;
++	}
+ 	event.thing = LT_EV_BREAKPOINT;
+ 	if (!event.proc->instruction_pointer) {
+ 		event.proc->instruction_pointer =
+@@ -115,3 +132,4 @@ static struct process *pid2proc(pid_t pi
+ 	}
+ 	return NULL;
+ }
++

@@ -1,0 +1,27 @@
+diff -Bburp ltrace-0.5-orig/ltrace-0.5/proc.c ltrace-0.5/proc.c
+--- ltrace-0.5-orig/ltrace-0.5/proc.c	2006-09-04 13:58:46.000000000 +0200
++++ ltrace-0.5/proc.c	2006-09-04 14:22:24.000000000 +0200
+@@ -38,13 +38,11 @@ void open_pid(pid_t pid, int verbose)
+ 	struct process *proc;
+ 	char *filename;
+ 
+-#if 0
+ 	if (trace_pid(pid) < 0) {
+ 		fprintf(stderr, "Cannot attach to pid %u: %s\n", pid,
+ 			strerror(errno));
+ 		return;
+ 	}
+-#endif
+ 
+ 	filename = pid2name(pid);
+ 
+@@ -57,6 +55,6 @@ void open_pid(pid_t pid, int verbose)
+ 		return;
+ 	}
+ #endif
+-	proc = open_program(filename, pid);
+-	proc->breakpoints_enabled = -1;
++	proc = open_program(filename, 0);
++	proc->pid = pid;
+ }
+Only in ltrace-0.5: proc.c~

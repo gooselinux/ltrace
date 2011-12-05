@@ -1,0 +1,59 @@
+Only in ltrace-0.5-dasho/: config.h
+Only in ltrace-0.5-dasho/: config.log
+Only in ltrace-0.5-dasho/: config.status
+Only in ltrace-0.5-dasho/: Makefile
+diff -ur ltrace-0.5/summary.c ltrace-0.5-dasho/summary.c
+--- ltrace-0.5/summary.c	2006-04-24 12:14:01.000000000 -0400
++++ ltrace-0.5-dasho/summary.c	2008-05-19 15:22:13.000000000 -0400
+@@ -68,16 +68,17 @@
+ 
+ 	qsort(entries, num_entries, sizeof(*entries), compar);
+ 
+-	printf("%% time     seconds  usecs/call     calls      function\n");
+-	printf
+-	    ("------ ----------- ----------- --------- --------------------\n");
++	fprintf(output, 
++		"%% time     seconds  usecs/call     calls      function\n");
++	fprintf(output, 
++	    "------ ----------- ----------- --------- --------------------\n");
+ 	for (i = 0; i < num_entries; i++) {
+ 		unsigned long long int c;
+ 		unsigned long long int p;
+ 		c = 1000000 * (int)entries[i].tv.tv_sec +
+ 		    (int)entries[i].tv.tv_usec;
+ 		p = 100000 * c / tot_usecs + 5;
+-		printf("%3lu.%02lu %4d.%06d %11lu %9d %s\n",
++		fprintf(output, "%3lu.%02lu %4d.%06d %11lu %9d %s\n",
+ 		       (unsigned long int)(p / 1000),
+ 		       (unsigned long int)((p / 10) % 100),
+ 		       (int)entries[i].tv.tv_sec, (int)entries[i].tv.tv_usec,
+@@ -85,8 +86,8 @@
+ 		       entries[i].count,
+ 		       opt_C ? my_demangle(entries[i].name) : entries[i].name);
+ 	}
+-	printf
+-	    ("------ ----------- ----------- --------- --------------------\n");
+-	printf("100.00 %4lu.%06lu             %9d total\n", tot_usecs / 1000000,
+-	       tot_usecs % 1000000, tot_count);
++	fprintf(output,
++	    "------ ----------- ----------- --------- --------------------\n");
++	fprintf(output, "100.00 %4lu.%06lu             %9d total\n", 
++		tot_usecs / 1000000, tot_usecs % 1000000, tot_count);
+ }
+Only in ltrace-0.5-dasho/: summary.c~
+Only in ltrace-0.5-dasho/sysdeps/linux-gnu: arch_syscallent.h
+Only in ltrace-0.5-dasho/sysdeps/linux-gnu: breakpoint.o
+Only in ltrace-0.5-dasho/sysdeps/linux-gnu: os.o
+Only in ltrace-0.5-dasho/sysdeps/linux-gnu: proc.o
+Only in ltrace-0.5-dasho/sysdeps/linux-gnu: signalent1.h
+Only in ltrace-0.5-dasho/sysdeps/linux-gnu: signalent.h
+Only in ltrace-0.5-dasho/sysdeps/linux-gnu: syscallent1.h
+Only in ltrace-0.5-dasho/sysdeps/linux-gnu: syscallent.h
+Only in ltrace-0.5-dasho/sysdeps/linux-gnu: sysdep.h
+Only in ltrace-0.5-dasho/sysdeps/linux-gnu: trace.o
+Only in ltrace-0.5-dasho/sysdeps/linux-gnu/x86_64: regs.o
+Only in ltrace-0.5-dasho/sysdeps/linux-gnu/x86_64: trace.o
+Only in ltrace-0.5-dasho/testsuite/ltrace.main: Makefile
+Only in ltrace-0.5-dasho/testsuite/ltrace.minor: Makefile
+Only in ltrace-0.5-dasho/testsuite/ltrace.torture: Makefile
+Only in ltrace-0.5-dasho/testsuite: Makefile

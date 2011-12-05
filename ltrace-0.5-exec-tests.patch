@@ -1,0 +1,74 @@
+diff -BurpN ltrace-0.5-orig/testsuite/ltrace.minor/trace-exec1.c ltrace-0.5/testsuite/ltrace.minor/trace-exec1.c
+--- ltrace-0.5-orig/testsuite/ltrace.minor/trace-exec1.c	1969-12-31 19:00:00.000000000 -0500
++++ ltrace-0.5/testsuite/ltrace.minor/trace-exec1.c	2006-12-06 16:39:06.000000000 -0500
+@@ -0,0 +1,6 @@
++#include <stdio.h>
++int main (void)
++{
++  printf("Hello, World.\n");
++  return 0;
++}
+diff -BurpN ltrace-0.5-orig/testsuite/ltrace.minor/trace-exec.c ltrace-0.5/testsuite/ltrace.minor/trace-exec.c
+--- ltrace-0.5-orig/testsuite/ltrace.minor/trace-exec.c	1969-12-31 19:00:00.000000000 -0500
++++ ltrace-0.5/testsuite/ltrace.minor/trace-exec.c	2006-12-06 16:51:45.000000000 -0500
+@@ -0,0 +1,8 @@
++#include <unistd.h>
++#include <stdlib.h>
++
++int main (int argc, char ** argv)
++{
++  execl (argv[1], argv[1], NULL);
++  abort ();
++}
+diff -BurpN ltrace-0.5-orig/testsuite/ltrace.minor/trace-exec.exp ltrace-0.5/testsuite/ltrace.minor/trace-exec.exp
+--- ltrace-0.5-orig/testsuite/ltrace.minor/trace-exec.exp	1969-12-31 19:00:00.000000000 -0500
++++ ltrace-0.5/testsuite/ltrace.minor/trace-exec.exp	2006-12-06 16:57:30.000000000 -0500
+@@ -0,0 +1,48 @@
++set testfile "trace-exec"
++set srcfile ${testfile}.c
++set binfile ${testfile}
++
++verbose "compiling first source file now....."
++# Build the shared libraries this test case needs.
++if  { [ ltrace_compile "${srcdir}/${subdir}/${testfile}.c" "${srcdir}/${subdir}/${binfile}" executable {debug} ] != "" } {
++     send_user "Testcase compile failed, so all tests in this file will automatically fail.\n"
++}
++
++verbose "compiling second source file now....."
++# Build the shared libraries this test case needs.
++if  { [ ltrace_compile "${srcdir}/${subdir}/${testfile}1.c" "${srcdir}/${subdir}/${binfile}1" executable {debug} ] != "" } {
++     send_user "Testcase compile failed, so all tests in this file will automatically fail.\n"
++}
++
++global LTRACE
++set exec_output ""
++
++#Run PUT for ltarce.
++spawn $LTRACE -f $srcdir/$subdir/$testfile $srcdir/$subdir/${testfile}1
++set timeout 4
++expect timeout  {
++	fail "Time out! Maybe caused by ltrace segment fault or improper timeout value here!"
++	return
++}
++
++catch "exec $LTRACE -f $srcdir/$subdir/$testfile $srcdir/$subdir/${testfile}1" exec_output
++
++#check the output of this program.
++verbose "ltrace runtest output: $exec_output\n"
++if [regexp {ELF from incompatible architecture} $exec_output] {
++	fail "32-bit ltrace can not perform on 64-bit PUTs and rebuild ltrace in 64 bit mode!"
++	return
++} elseif [ regexp {Couldn't get .hash data} $exec_output ] {
++	fail "Couldn't get .hash data!"
++	return
++}
++
++ltrace_saveoutput "${exec_output}" ${srcdir}/${subdir}/${testfile}.ltrace
++
++ltrace_verify_output ${srcdir}/${subdir}/${testfile}.ltrace {'^execl'} 1
++
++# assume glibc and see we really trace both binaries
++ltrace_verify_output ${srcdir}/${subdir}/${testfile}.ltrace {'^__libc_start_main'} 2
++
++# and that we trace printf from the second binary
++ltrace_verify_output ${srcdir}/${subdir}/${testfile}.ltrace {'^(puts|printf)'} 1

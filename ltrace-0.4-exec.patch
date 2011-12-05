@@ -1,0 +1,19 @@
+--- process_event.c	2006-02-20 16:48:07.000000000 -0500
++++ process_event.fix	2006-07-04 04:20:27.000000000 -0400
+@@ -239,7 +239,6 @@ static void process_sysret(struct event 
+ 			     sysname(event->proc, event->e_un.sysnum));
+ 	}
+ 	if (exec_p(event->proc, event->e_un.sysnum)) {
+-		if (gimme_arg(LT_TOF_SYSCALLR, event->proc, -1) == 0) {
+ 			pid_t saved_pid;
+ 			event->proc->mask_32bit = 0;
+ 			event->proc->personality = 0;
+@@ -251,8 +250,6 @@ static void process_sysret(struct event 
+ 			event->proc->pid = 0;
+ 			breakpoints_init(event->proc);
+ 			event->proc->pid = saved_pid;
+-		} else
+-			enable_all_breakpoints(event->proc);
+ 	}
+ 	continue_process(event->proc->pid);
+ }

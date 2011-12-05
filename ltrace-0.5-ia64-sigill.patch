@@ -1,0 +1,157 @@
+diff -Nurp ltrace-0.5-orig/testsuite/ltrace.torture/ia64-sigill.exp ltrace-0.5/testsuite/ltrace.torture/ia64-sigill.exp
+--- ltrace-0.5-orig/testsuite/ltrace.torture/ia64-sigill.exp	1969-12-31 19:00:00.000000000 -0500
++++ ltrace-0.5/testsuite/ltrace.torture/ia64-sigill.exp	2007-05-04 13:29:43.000000000 -0400
+@@ -0,0 +1,33 @@
++# This file was written by Yao Qi <qiyao@cn.ibm.com>.
++
++set testfile "ia64-sigill"
++set srcfile ${testfile}.s
++set binfile ${testfile}
++
++if { [istarget ia64-*] } then {
++    verbose "compiling source file now....."
++    # Build the shared libraries this test case needs.
++    if  { [ ltrace_compile "${srcdir}/${subdir}/${testfile}.s" "${srcdir}/${subdir}/${binfile}" executable {debug} ] != "" } {
++	 send_user "Testcase compile failed, so all tests in this file will automatically fail\n."
++    }
++
++    # Run PUT for ltarce.
++    set exec_output [ltrace_runtest $srcdir/$subdir $srcdir/$subdir/$binfile]
++
++    # Check the output of this program.
++    verbose "ltrace runtest output: $exec_output\n"
++    if [regexp {ELF from incompatible architecture} $exec_output] {
++	    fail "32-bit ltrace can not perform on 64-bit PUTs and rebuild ltrace in 64 bit mode!"
++	    return
++    } elseif [ regexp {Couldn't get .hash data} $exec_output ] {
++	    fail "Couldn't get .hash data!"
++	    return
++    }
++
++    catch "exec sh -c {grep SIGILL ${srcdir}/${subdir}/${testfile}.ltrace | wc -l ;exit}" output
++    if { $output == 0 } then {
++	pass "ltrace did interpret SIGILL as breakpoint."
++    } else {
++	fail "ltrace failed to interpret SIGILL as breakpoint."
++    }
++}
+diff -Nurp ltrace-0.5-orig/testsuite/ltrace.torture/ia64-sigill.s ltrace-0.5/testsuite/ltrace.torture/ia64-sigill.s
+--- ltrace-0.5-orig/testsuite/ltrace.torture/ia64-sigill.s	1969-12-31 19:00:00.000000000 -0500
++++ ltrace-0.5/testsuite/ltrace.torture/ia64-sigill.s	2007-05-04 12:51:14.000000000 -0400
+@@ -0,0 +1,43 @@
++	.file	"pokus.c"
++	.pred.safe_across_calls p1-p5,p16-p63
++	.section	.rodata
++	.align 8
++.LC0:
++	stringz	""
++	.text
++	.align 16
++	.global main#
++	.proc main#
++main:
++	.prologue 14, 32
++	.save ar.pfs, r33
++	alloc r33 = ar.pfs, 0, 4, 1, 0
++	.vframe r34
++	mov r34 = r12
++	mov r35 = r1
++	.save rp, r32
++	mov r32 = b0
++	.body
++	addl r36 = @ltoffx(.LC0), r1
++	;;
++	ld8.mov r36 = [r36], .LC0
++	br.call.sptk.many b0 = printf#
++	nop.b 0x0
++	nop.b 0x1
++	nop.b 0x2
++	nop.b 0x0
++	nop.b 0x1
++	nop.b 0x2
++	mov r1 = r35
++	addl r14 = 234, r0
++	;;
++	mov r8 = r14
++	mov ar.pfs = r33
++	mov b0 = r32
++	.restore sp
++	mov r12 = r34
++	br.ret.sptk.many b0
++	;;
++	.endp main#
++	.section	.note.GNU-stack,"",@progbits
++	.ident	"GCC: (GNU) 3.4.6 20060404 (Red Hat 3.4.6-3)"
+diff -Nurp ltrace-0.5-orig/wait_for_something.c ltrace-0.5/wait_for_something.c
+--- ltrace-0.5-orig/wait_for_something.c	2007-05-04 12:39:00.000000000 -0400
++++ ltrace-0.5/wait_for_something.c	2007-05-04 13:53:30.000000000 -0400
+@@ -27,6 +27,7 @@ struct event *wait_for_something(void)
+ 	pid_t pid, child_pid;
+ 	int status;
+ 	int tmp;
++	int stop_signal;
+ 
+ 	if (!list_of_processes) {
+ 		debug(1, "No more children");
+@@ -92,15 +93,38 @@ struct event *wait_for_something(void)
+ 		event.thing = LT_EV_UNKNOWN;
+ 		return &event;
+ 	}
+-	if ((WSTOPSIG(status) != (SIGTRAP | event.proc->tracesysgood)) &&
+-	    (WSTOPSIG(status) != SIGTRAP)) {
++
++	stop_signal = WSTOPSIG(status);
++	event.thing = LT_EV_NONE;
++
++	/* On some targets, breakpoints are signalled not using
++	   SIGTRAP, but also with SIGILL, SIGSEGV or SIGEMT.  Check
++	   for these. */
++	if (stop_signal == SIGSEGV
++	    || stop_signal == SIGILL
++#ifdef SIGEMT
++	    || stop_signal == SIGEMT
++#endif
++	    ) {
++		// If we didn't need to know IP so far, get it now.
++		void * addr = opt_i
++		  ? event.proc->instruction_pointer
++		  : (event.proc->instruction_pointer = get_instruction_pointer (event.proc));
++
++		if (address2bpstruct(event.proc, addr))
++			stop_signal = SIGTRAP;
++	}
++
++	if (event.thing == LT_EV_NONE
++	    && (stop_signal != (SIGTRAP | event.proc->tracesysgood))
++	    && (stop_signal != SIGTRAP)) {
+ 		event.thing = LT_EV_SIGNAL;
+-		event.e_un.signum = WSTOPSIG(status);
++		event.e_un.signum = stop_signal;
+ 		return &event;
+ 	}
+-        if((WSTOPSIG(status) == SIGTRAP) && (status & FORK_MASK)) {
++        if(stop_signal == SIGTRAP && (status & FORK_MASK)) {
+ 		event.thing = LT_EV_NONE;
+-		event.e_un.signum = WSTOPSIG(status);
++		event.e_un.signum = stop_signal;
+ 		child_pid = (pid_t) get_child_pid(event.proc->pid);
+                 if (child_pid){
+ 			debug (3, "fork: get_child_pid gave us %d", child_pid);
+@@ -110,7 +134,7 @@ struct event *wait_for_something(void)
+ 		continue_after_signal(event.proc->pid, event.e_un.signum);
+ 		return &event;
+ 	}
+-	if (WSTOPSIG(status) == SIGTRAP){
++	if (stop_signal == SIGTRAP){
+ 	/* Check whether this SIGTRAP is received just after execve is called for this process */
+ 		struct callstack_element *elem;
+ 		elem = &event.proc->callstack[event.proc->callstack_depth - 1];
+@@ -118,7 +142,7 @@ struct event *wait_for_something(void)
+ 			pid_t saved_pid;
+ 
+ 			event.thing = LT_EV_NONE;
+-			event.e_un.signum = WSTOPSIG(status);
++			event.e_un.signum = stop_signal;
+ 			debug(1,"Placing breakpoints for the new program");
+ 			event.proc->mask_32bit = 0;
+ 			event.proc->personality = 0;

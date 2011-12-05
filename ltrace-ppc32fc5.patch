@@ -1,0 +1,147 @@
+Index: output.c
+===================================================================
+--- output.c	(revision 45)
++++ output.c	(working copy)
+@@ -170,7 +170,6 @@ void output_left(enum tof type, struct p
+ 	}
+ 	if (current_proc) {
+ 		fprintf(output, " <unfinished ...>\n");
+-		current_proc = 0;
+ 		current_column = 0;
+ 	}
+ 	current_proc = proc;
+Index: elf.c
+===================================================================
+--- elf.c	(revision 45)
++++ elf.c	(working copy)
+@@ -403,7 +403,7 @@ struct library_symbol *read_elf(struct p
+ 			add_library_symbol(addr, name, &library_symbols,
+ 					   (PLTS_ARE_EXECUTABLE(lte)
+ 					   ?  LS_TOPLT_EXEC : LS_TOPLT_POINT),
+-					   ELF64_ST_BIND(sym.st_info) != 0);
++					   ELF64_ST_BIND(sym.st_info) == STB_WEAK);
+ 			if (!lib_tail)
+ 				lib_tail = &(library_symbols->next);
+ 		}
+@@ -415,7 +415,7 @@ struct library_symbol *read_elf(struct p
+                    already there. */
+ 		main_cheat = (struct opt_x_t *)malloc(sizeof(struct opt_x_t));
+ 		if (main_cheat == NULL)
+-			error(EXIT_FAILURE, 0, "Couldn allocate memory");
++			error(EXIT_FAILURE, 0, "Couldn't allocate memory");
+ 		main_cheat->next = opt_x;
+ 		main_cheat->found = 0;
+ 		main_cheat->name = PLTs_initialized_by_here;
+@@ -464,7 +464,7 @@ struct library_symbol *read_elf(struct p
+ 			if (strcmp(xptr->name, PLTs_initialized_by_here) == 0) {
+ 				if (lte->ehdr.e_entry) {
+ 					add_library_symbol (
+-						elf_plt2addr (lte, (void*)(long)
++						opd2addr (lte, (void*)(long)
+ 							lte->ehdr.e_entry),
+ 						PLTs_initialized_by_here,
+ 						lib_tail, 1, 0);
+Index: sysdeps/linux-gnu/ppc/plt.c
+===================================================================
+--- sysdeps/linux-gnu/ppc/plt.c	(revision 45)
++++ sysdeps/linux-gnu/ppc/plt.c	(working copy)
+@@ -1,4 +1,5 @@
+ #include <gelf.h>
++#include <errno.h>
+ #include "ltrace.h"
+ #include "elf.h"
+ #include "debug.h"
+@@ -15,8 +16,7 @@ void *sym2addr(struct process *proc, str
+ 	long addr = sym->enter_addr;
+ 	long pt_ret;
+ 
+-	debug(3, 0);
+-
++	debug(2, "sym2addr: sym=%s, pid=%d, enter_addr=%p", sym->name, proc->pid, addr);
+ 	if (sym->plt_type != LS_TOPLT_POINT) {
+ 		return addr;
+ 	}
+@@ -46,6 +46,10 @@ void *sym2addr(struct process *proc, str
+ 	// break-point right in the PLT.
+ 
+ 	pt_ret = ptrace(PTRACE_PEEKTEXT, proc->pid, addr, 0);
++	if (pt_ret == -1 && errno) {
++		perror ("ptrace");
++		return 0;
++	}
+ 
+ 	if (proc->mask_32bit) {
+ 		// Assume big-endian.
+Index: sysdeps/linux-gnu/ppc/regs.c
+===================================================================
+--- sysdeps/linux-gnu/ppc/regs.c	(revision 45)
++++ sysdeps/linux-gnu/ppc/regs.c	(working copy)
+@@ -5,8 +5,10 @@
+ #include <sys/types.h>
+ #include <sys/ptrace.h>
+ #include <asm/ptrace.h>
++#include <errno.h>
+ 
+ #include "ltrace.h"
++#include "debug.h"
+ 
+ #if (!defined(PTRACE_PEEKUSER) && defined(PTRACE_PEEKUSR))
+ # define PTRACE_PEEKUSER PTRACE_PEEKUSR
+@@ -35,6 +37,11 @@ void *get_stack_pointer(struct process *
+ 
+ void *get_return_addr(struct process *proc, void *stack_pointer)
+ {
+-	return (void *)ptrace(PTRACE_PEEKUSER, proc->pid, sizeof(long) * PT_LNK,
+-			      0);
++	long p = ptrace(PTRACE_PEEKUSER, proc->pid, sizeof(long) * PT_LNK, NULL);
++	if (p == -1 && errno) {
++		perror ("ptrace");
++		return NULL;
++	}
++	debug (3, "pid=%d ret=%p", proc->pid, p);
++	return (void*)p;
+ }
+Index: sysdeps/linux-gnu/ppc/arch.h
+===================================================================
+--- sysdeps/linux-gnu/ppc/arch.h	(revision 45)
++++ sysdeps/linux-gnu/ppc/arch.h	(working copy)
+@@ -7,6 +7,7 @@
+ #ifdef __powerpc64__ // Says 'ltrace' is 64 bits, says nothing about target.
+ #define LT_ELFCLASS2	ELFCLASS64
+ #define LT_ELF_MACHINE2	EM_PPC64
++#endif
+ 
+ #define PLT_REINITALISATION_BP    "_start"
+ 
+@@ -16,6 +17,3 @@
+ #if (PPC_NOP_LENGTH != BREAKPOINT_LENGTH)
+ #error "Length of the breakpoint value not equal to the length of a nop instruction"
+ #endif
+-
+-
+-#endif
+Index: breakpoints.c
+===================================================================
+--- breakpoints.c	(revision 45)
++++ breakpoints.c	(working copy)
+@@ -28,6 +28,7 @@ insert_breakpoint(struct process *proc, 
+ 		  struct library_symbol *libsym)
+ {
+ 	struct breakpoint *sbp;
++	debug(1, "insert_breakpoint(symbol=%s, addr=%p)", libsym?libsym->name:"(nil)", addr);
+ 
+ 	if (!proc->breakpoints) {
+ 		proc->breakpoints =
+@@ -165,11 +166,9 @@ void breakpoints_init(struct process *pr
+ 	} else {
+ 		proc->list_of_symbols = NULL;
+ 	}
+-	sym = proc->list_of_symbols;
+-	while (sym) {
++	for (sym = proc->list_of_symbols; sym; sym = sym->next) {
+ 		/* proc->pid==0 delays enabling. */
+ 		insert_breakpoint(proc, sym2addr(proc, sym), sym);
+-		sym = sym->next;
+ 	}
+ 	proc->callstack_depth = 0;
+ 	proc->breakpoints_enabled = -1;

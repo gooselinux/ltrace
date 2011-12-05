@@ -1,0 +1,78 @@
+diff -urp ltrace-0.5-1/process_event.c ltrace-0.5/process_event.c
+--- ltrace-0.5-1/process_event.c	2008-10-07 12:09:14.000000000 +0200
++++ ltrace-0.5/process_event.c	2008-10-07 12:09:37.000000000 +0200
+@@ -228,19 +228,6 @@ static void process_sysret(struct event 
+ 		output_right(LT_TOF_SYSCALLR, event->proc,
+ 			     sysname(event->proc, event->e_un.sysnum));
+ 	}
+-	if (exec_p(event->proc, event->e_un.sysnum)) {
+-			pid_t saved_pid;
+-			event->proc->mask_32bit = 0;
+-			event->proc->personality = 0;
+-			/* FIXME: Leak, should have arch_dep_free.
+-			   But we are leaking here much more than that.  */
+-			event->proc->arch_ptr = NULL;
+-			event->proc->filename = pid2name(event->proc->pid);
+-			saved_pid = event->proc->pid;
+-			event->proc->pid = 0;
+-			breakpoints_init(event->proc);
+-			event->proc->pid = saved_pid;
+-	}
+ 	continue_process(event->proc->pid);
+ }
+ 
+Only in ltrace-0.5: process_event.c.orig
+diff -urp ltrace-0.5-1/wait_for_something.c ltrace-0.5/wait_for_something.c
+--- ltrace-0.5-1/wait_for_something.c	2008-10-07 12:09:14.000000000 +0200
++++ ltrace-0.5/wait_for_something.c	2008-10-07 12:09:37.000000000 +0200
+@@ -110,6 +110,29 @@ struct event *wait_for_something(void)
+ 		continue_after_signal(event.proc->pid, event.e_un.signum);
+ 		return &event;
+ 	}
++	if (WSTOPSIG(status) == SIGTRAP){
++	/* Check whether this SIGTRAP is received just after execve is called for this process */
++		struct callstack_element *elem;
++		elem = &event.proc->callstack[event.proc->callstack_depth - 1];
++		if( elem && elem->is_syscall &&  exec_p(event.proc, elem->c_un.syscall)){
++			pid_t saved_pid;
++
++			event.thing = LT_EV_NONE;
++			event.e_un.signum = WSTOPSIG(status);
++			debug(1,"Placing breakpoints for the new program");
++			event.proc->mask_32bit = 0;
++			event.proc->personality = 0;
++			event.proc->arch_ptr = NULL;
++			event.proc->filename = pid2name(event.proc->pid);
++			saved_pid = event.proc->pid;
++			event.proc->pid = 0;
++			breakpoints_init(event.proc);
++			event.proc->pid = saved_pid;
++			continue_process(event.proc->pid);
++			return &event;
++		}
++	}
++
+ 	event.thing = LT_EV_BREAKPOINT;
+ 	if (!event.proc->instruction_pointer) {
+ 		event.proc->instruction_pointer =
+diff -up /home/petr/mnt/ibm-js22-05.rhts.eng.bos.redhat.com/rpmbuild/BUILD/ltrace-0.5/sysdeps/linux-gnu/trace.c\~ /home/petr/mnt/ibm-js22-05.rhts.eng.bos.redhat.com/rpmbuild/BUILD/ltrace-0.5/sysdeps/linux-gnu/trace.c
+--- ltrace-0.5/sysdeps/linux-gnu/trace.c~	2010-03-25 13:16:18.000000000 +0100
++++ ltrace-0.5/sysdeps/linux-gnu/trace.c	2010-03-25 13:20:57.000000000 +0100
+@@ -104,13 +104,16 @@ void trace_set_options(struct process *p
+ #ifndef PTRACE_O_TRACEFORK
+ #define PTRACE_O_TRACEFORK 0x00000002
+ #endif
++#ifndef PTRACE_O_TRACEEXEC
++#define PTRACE_O_TRACEEXEC 0x00000010
++#endif
+       
+ 	ulong setoptions = 0;
+ 
+ 	if (proc->tracesysgood & 0x80)
+ 		return;
+  
+-	setoptions |= PTRACE_O_TRACESYSGOOD;
++	setoptions |= PTRACE_O_TRACESYSGOOD | PTRACE_O_TRACEEXEC;
+ 	if (TRACE_FORK == option){
+ 		setoptions |= PTRACE_O_TRACEFORK;
+ 	}

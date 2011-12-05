@@ -1,0 +1,90 @@
+diff -urp ltrace-0.5/breakpoints.c ltrace-0.5-pm/breakpoints.c
+--- ltrace-0.5/breakpoints.c	2009-03-02 19:43:27.000000000 -0500
++++ ltrace-0.5-pm/breakpoints.c	2009-03-02 18:46:25.000000000 -0500
+@@ -98,8 +101,11 @@ void enable_all_breakpoints(struct proce
+ 			a = ptrace(PTRACE_PEEKTEXT, proc->pid,
+ 				   sym2addr(proc, proc->list_of_symbols),
+ 				   0);
+-			if (a == 0x0)
++			if (a == 0x0) {
++				debug(2, "Not enabling breakpoints for pid %u "
++				      "yet, PLT is not populated.", proc->pid);
+ 				return;
++			}
+ 		}
+ #endif
+ 
+@@ -178,6 +178,7 @@ void breakpoints_init(struct process *pr
+ 	}
+ 	proc->callstack_depth = 0;
+ 	proc->breakpoints_enabled = -1;
++	proc->old = 0;
+ }
+ 
+ void reinitialize_breakpoints(struct process *proc)
+diff -urp ltrace-0.5/ltrace.h ltrace-0.5-pm/ltrace.h
+--- ltrace-0.5/ltrace.h	2009-03-02 19:43:27.000000000 -0500
++++ ltrace-0.5-pm/ltrace.h	2009-03-02 19:06:43.000000000 -0500
+@@ -110,6 +110,7 @@ struct process {
+ 	int early;	/* for consistency checks, this is true for
+ 			 * children whose TRAP was delivered before
+ 			 * the fork message of the parent.  */
++	int old;
+ 
+ 	int callstack_depth;
+ 	struct callstack_element callstack[MAX_CALLDEPTH];
+diff -urp ltrace-0.5/proc.c ltrace-0.5-pm/proc.c
+--- ltrace-0.5/proc.c	2009-03-02 19:43:27.000000000 -0500
++++ ltrace-0.5-pm/proc.c	2009-03-02 19:07:50.000000000 -0500
+@@ -22,11 +22,8 @@ struct process *open_program(char *filen
+ 	}
+ 	proc->filename = filename;
+ 	proc->breakpoints_enabled = -1;
+-	proc->pid = 0;
+ 	breakpoints_init(proc); 
+-	if (pid) {
+-		proc->pid = pid;
+-	}
++	proc->pid = pid;
+ 
+ 	proc->next = list_of_processes;
+ 	list_of_processes = proc;
+@@ -63,6 +60,9 @@ void open_forked_pid(pid_t pid, int earl
+ {
+ 	char *filename = pid2name(pid);
+ 	struct process *proc = open_program(filename, pid);
+ 	proc->early = early;
++#ifdef __powerpc__
++	breakpoints_init(proc);
++	proc->breakpoints_enabled = 1;
++#endif
+-	proc->breakpoints_enabled = -1;
+ }
+diff -urp ltrace-0.5/wait_for_something.c ltrace-0.5-pm/wait_for_something.c
+--- ltrace-0.5/wait_for_something.c	2009-03-02 19:43:27.000000000 -0500
++++ ltrace-0.5-pm/wait_for_something.c	2009-03-02 19:07:21.000000000 -0500
+@@ -46,6 +46,7 @@ struct event *wait_for_something(void)
+ 		exit(1);
+ 	}
+ 
++	debug(3, "signal from pid %u, status %#x", pid, status);
+ 	event.proc = pid2proc(pid);
+ 	if (!event.proc) {
+ 		if(!opt_f) {
+@@ -66,9 +67,13 @@ struct event *wait_for_something(void)
+ 	}
+ 	get_arch_dep(event.proc);
+ 	event.proc->instruction_pointer = NULL;
+-	debug(3, "signal from pid %u", pid);
+-	if (event.proc->breakpoints_enabled == -1) {
+-		enable_all_breakpoints(event.proc);
++	if (!event.proc->old) {
++		event.proc->old = 1;
++		if (event.proc->breakpoints_enabled == -1) {
++			debug (2, "BRANCH: enable breakpoints for the first time");
++			enable_all_breakpoints(event.proc);
++			debug (2, "BRANCH: done enabling breakpoints for the first time");
++		}
+ 		event.thing = LT_EV_NONE;
+   		if(opt_f){
+ 			trace_set_options(event.proc, event.proc->pid, TRACE_FORK);
